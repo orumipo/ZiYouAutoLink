@@ -15,7 +15,7 @@
 
 ## 安装
 
-1. 到本仓库的 **Releases** 页下载 `ZiYouAutoLink-v1.0.zip`，解压到任意位置。
+1. 到本仓库的 [Releases](https://github.com/orumipo/ZiYouAutoLink/releases) 页下载 `ZiYouAutoLink-v1.0.zip`，解压到任意位置。
 2. 双击 `install.bat`。
 3. 弹出 UAC 时点「是」（需要管理员权限：要往 Illustrator 安装目录写一个启动脚本）。
 4. 看输出的「安装结果」，两边都打勾就完成了。
@@ -87,7 +87,8 @@ core\
 本项目以 **GNU General Public License v3.0** 发布 —— 完整条款见 [`LICENSE`](LICENSE)。
 Copyright (C) 2026 TOTO & rumip.
 
-你可以自由使用、修改、再分发；但把二进制或脚本分发给别人时（不论改没改过），必须让对方也能拿到对应的完整源码。
+你可以自由使用、修改、再分发；但把二进制或脚本分发给别人时（不论改没改过），必须让对方也能拿到对应的完整源码 ——
+源码仓库：<https://github.com/orumipo/ZiYouAutoLink>。
 
 ## 免责
 
