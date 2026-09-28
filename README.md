@@ -15,7 +15,7 @@
 
 ## 安装
 
-1. 到本仓库的 [Releases](https://github.com/orumipo/ZiYouAutoLink/releases) 页下载 `ZiYouAutoLink-v1.0.zip`，解压到任意位置。
+1. 到本仓库的 [Releases](https://github.com/orumipo/ZiYouAutoLink/releases) 页下载 `ZiYouAutoLink-v1.1.zip`，解压到任意位置。
 2. 双击 `install.bat`。
 3. 弹出 UAC 时点「是」（需要管理员权限：要往 Illustrator 安装目录写一个启动脚本）。
 4. 看输出的「安装结果」，两边都打勾就完成了。
@@ -39,6 +39,12 @@
 
 ## 常见问题
 
+**Q: 打开 Photoshop 时字由没有自动起来**
+按顺序查两件事：
+
+1. **Photoshop 之前是不是真的退出了。** 它要是还在后台开着，你再点图标只会把它调到前面，并不会触发「启动」事件（Photoshop 是单实例的），所以不会有任何动作。彻底退出再打开，才是有效的验证。
+2. **打开 Photoshop → 文件 > 脚本 > 脚本事件管理器**，看看左上角「启用事件以运行脚本/动作」有没有勾上。这个总开关**默认是关的**，不勾的话，事件列表里写了脚本也不会执行。`install.bat` 会自动帮你把它打开。
+
 **Q: 提示「没有找到字由客户端」**
 字由没装在常见位置。按提示把 `字由.exe` 的完整路径粘贴进去就行。
 
@@ -54,7 +60,8 @@
 
 ## 它是怎么做的
 
-- **Photoshop 侧**：通过 Photoshop 的 COM 自动化接口注册两个脚本事件（`Start Application` / `Quit Application`）。
+- **Photoshop 侧**：通过 Photoshop 的 COM 自动化接口注册两个脚本事件（`Start Application` / `Quit Application`），
+  并顺手打开「脚本事件管理器」的总开关（「启用事件以运行脚本/动作」—— 它默认是关的，不打开的话脚本事件注册了也不会执行；开关状态存在 PS 设置目录的 `tw0001.dat` 第一行）。
   这就是 Photoshop 自带的「脚本事件管理器」机制，安装程序只是替你自动配好了，**没有装任何常驻程序**。
 - **Illustrator 侧**：在它的安装目录里创建 `Startup Scripts\` 并放入一个 `.jsx` —— 这是 Adobe 官方文档支持的启动脚本机制。
   Illustrator 的脚本接口**没有退出事件**（官方对象参考里没有 `notifiers`），所以它运行期间会有一个极轻量的等待进程，等它退出后再做倒计时收尾。
@@ -71,6 +78,8 @@ core\
   ziyou-launch.ps1   拉起字由，并压制它启动时抢焦点
   ziyou-grace.ps1    宽限期倒计时，到点关闭字由
   ziyou-*.vbs        WSH 启动壳（避开 PowerShell 窗口闪烁）
+  ziyou-enable-ps-events.ps1 / .vbs
+                    安装时若 PS 正开着，等它退出后补写脚本事件总开关（PS 退出会覆写 tw0001.dat）
   hook-ps-start.jsx  Photoshop「Start Application」事件钩子
   hook-ps-quit.jsx   Photoshop「Quit Application」事件钩子
   hook-ai-start.jsx  Illustrator 启动脚本钩子

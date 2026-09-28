@@ -42,7 +42,7 @@ if (-not $isAdmin -and -not $AllowNoAdmin) {
 }
 
 # ---------------------------------------------------------------------------
-Head '1/5 查找字由'
+Head '1/6 查找字由'
 function Find-ZiYouExe {
   $found = New-Object System.Collections.Generic.List[string]
 
@@ -110,7 +110,7 @@ Say "  字由: $zyExe"
 $zyName = [IO.Path]::GetFileNameWithoutExtension($zyExe)
 
 # ---------------------------------------------------------------------------
-Head '2/5 查找 Adobe 应用'
+Head '2/6 查找 Adobe 应用'
 function Find-AppExe([string]$exeName, [string[]]$extraRoots) {
   foreach ($root in @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths',
                       'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\App Paths')) {
@@ -142,7 +142,7 @@ if ($psExe) { Say "  Photoshop: $psExe" } else { Say '  Photoshop: 未找到（�
 if ($aiExe) { Say "  Illustrator: $aiExe" } else { Say '  Illustrator: 未找到（将跳过 AI 启动脚本）' }
 
 # ---------------------------------------------------------------------------
-Head '3/5 部署文件'
+Head '3/6 部署文件'
 if (-not (Test-Path -LiteralPath $coreDir)) { Say "找不到 core 目录: $coreDir"; exit 1 }
 if (Get-Process -Name $zyName -ErrorAction SilentlyContinue) { } # client may be running, harmless
 if (-not (Test-Path -LiteralPath $installDir)) { New-Item -ItemType Directory -Path $installDir -Force | Out-Null }
@@ -164,7 +164,7 @@ $configPath = Join-Path $installDir 'config.json'
 Say "  已写入配置: $configPath"
 
 # ---------------------------------------------------------------------------
-Head '4/5 注册 Photoshop 事件'
+Head '4/6 注册 Photoshop 事件'
 $psResult = 'skipped'
 if ($psExe) {
   $startJsx = Join-Path $installDir 'hook-ps-start.jsx'
@@ -211,6 +211,14 @@ app.notifiers.length;
     if ($startedByUs) {
       Say '  关闭刚才为注册而启动的 Photoshop…'
       try { $app.Quit() } catch { }
+      # Preferences (and with them the script-events switch) are only flushed on
+      # exit, so wait for the process to really go away before touching the file.
+      for ($i = 0; $i -lt 60; $i++) {
+        if (-not (Get-Process -Name 'Photoshop' -ErrorAction SilentlyContinue)) { break }
+        Start-Sleep -Seconds 1
+      }
+      Start-Sleep -Seconds 2
+      Say '  已退出。'
     }
   } else {
     Say '  连接 Photoshop 失败（COM 不可用）。PS 侧未注册。'
@@ -221,7 +229,82 @@ app.notifiers.length;
 }
 
 # ---------------------------------------------------------------------------
-Head '5/5 安装 Illustrator 启动脚本'
+Head '5/6 打开 Photoshop 的脚本事件总开关'
+# Photoshop gates *all* script events behind one master switch - the
+# "启用事件以运行脚本/动作" checkbox at the top of 文件 > 脚本 > 脚本事件管理器.
+# It ships OFF, and while it is off a registered event sits in the list and is
+# never run (the registration looks fine, nothing happens). The switch is the
+# first line of <Photoshop settings>\tw0001.dat ("true"/"false").
+# The catch: Photoshop rewrites that file every time it quits, so a flip made
+# while it is running gets lost. We therefore only write the file once the
+# instance we started has exited; if the user's own Photoshop is still open we
+# leave a one-shot helper that waits for it to close and flips it again.
+$eventsResult = 'skipped'
+
+function Find-PsEventsFile {
+  $adb = Join-Path $env:APPDATA 'Adobe'
+  if (-not (Test-Path -LiteralPath $adb)) { return $null }
+  $hits = @()
+  foreach ($r in @(Get-ChildItem -LiteralPath $adb -Directory -Filter 'Adobe Photoshop*' -ErrorAction SilentlyContinue)) {
+    foreach ($s in @(Get-ChildItem -LiteralPath $r.FullName -Directory -Filter '*Settings' -ErrorAction SilentlyContinue)) {
+      $f = Join-Path $s.FullName 'tw0001.dat'
+      if (Test-Path -LiteralPath $f) { $hits += (Get-Item -LiteralPath $f) }
+    }
+  }
+  if ($hits.Count -eq 0) { return $null }
+  # the file for the Photoshop we just registered with is the freshest one
+  return ($hits | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+}
+
+function Enable-PsScriptEvents {
+  param([string]$Path)
+  if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return 'no-file' }
+  $b = [IO.File]::ReadAllBytes($Path)
+  if ($b.Length -lt 5) { return 'short' }
+  if ([Text.Encoding]::ASCII.GetString($b, 0, 4) -eq 'true') { return 'already-on' }
+  if ([Text.Encoding]::ASCII.GetString($b, 0, 5) -ne 'false') { return 'unexpected' }
+  # byte-level splice: "false" (5) -> "true" (4); the rest, CRLF included, is kept
+  $new = New-Object byte[] ($b.Length - 1)
+  [Array]::Copy([Text.Encoding]::ASCII.GetBytes('true'), 0, $new, 0, 4)
+  [Array]::Copy($b, 5, $new, 4, $b.Length - 5)
+  [IO.File]::WriteAllBytes($Path, $new)
+  return 'flipped'
+}
+
+if ($psResult -eq 'ok') {
+  $eventsFile = Find-PsEventsFile
+  if (-not $eventsFile) {
+    Say '  找不到 Photoshop 的脚本事件设置文件（tw0001.dat），跳过。'
+    $eventsResult = 'no-file'
+  } else {
+    Say "  设置文件: $eventsFile"
+    if ($startedByUs) {
+      $eventsResult = Enable-PsScriptEvents -Path $eventsFile
+    } else {
+      # their Photoshop is open; whatever we write now is overwritten on quit
+      Enable-PsScriptEvents -Path $eventsFile | Out-Null
+      $eventsResult = 'deferred'
+      try {
+        Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\wscript.exe') `
+          -ArgumentList "`"$installDir\ziyou-enable-ps-events.vbs`"" -WindowStyle Hidden | Out-Null
+        Say '  Photoshop 正开着，已留一个一次性助手：等它关闭后再把开关写回去。'
+      } catch {
+        Say ('  提示：请在关闭 Photoshop 后再运行一次 install.bat。（' + $_.Exception.Message + '）')
+      }
+    }
+    switch ($eventsResult) {
+      'flipped'    { Say '  已打开脚本事件总开关 ✓' }
+      'already-on' { Say '  脚本事件总开关本来就是打开的 ✓' }
+      'deferred'   { Say '  开关已写入，等待 Photoshop 退出后由助手再次确认 ✓' }
+      default      { Say "  未能确认开关状态（$eventsResult）" }
+    }
+  }
+} else {
+  Say '  跳过（PS 侧未注册成功）'
+}
+
+# ---------------------------------------------------------------------------
+Head '6/6 安装 Illustrator 启动脚本'
 $aiResult = 'skipped'
 if ($aiExe) {
   # Per Adobe's Illustrator Scripting Guide, application-specific startup scripts
